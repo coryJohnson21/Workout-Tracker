@@ -1,0 +1,629 @@
+import React, { useState, useEffect } from 'react';
+import { Dumbbell, TrendingUp, Calendar, Award, Plus, X, BarChart3, Activity } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
+const WorkoutTracker = () => {
+  const [activeTab, setActiveTab] = useState('log');
+  const [workouts, setWorkouts] = useState([]);
+  const [selectedExercise, setSelectedExercise] = useState('');
+  const [sets, setSets] = useState([{ weight: '', reps: '' }]);
+  const [notes, setNotes] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [customExercises, setCustomExercises] = useState({});
+  const [customExerciseName, setCustomExerciseName] = useState('');
+  const [customExerciseCategory, setCustomExerciseCategory] = useState('');
+
+  const exercises = {
+    'Chest': ['Bench Press', 'Incline Bench Press', 'Dumbbell Press', 'Cable Flyes', 'Push-Ups'],
+    'Back': ['Deadlift', 'Bent Over Row', 'Pull-Ups', 'Lat Pulldown', 'Seated Cable Row'],
+    'Legs': ['Squat', 'Leg Press', 'Romanian Deadlift', 'Leg Curl', 'Leg Extension', 'Calf Raises'],
+    'Shoulders': ['Overhead Press', 'Dumbbell Shoulder Press', 'Lateral Raises', 'Face Pulls'],
+    'Arms': ['Barbell Curl', 'Tricep Dips', 'Hammer Curls', 'Tricep Pushdown', 'Skull Crushers']
+  };
+
+  useEffect(() => {
+    loadWorkouts();
+    loadCustomExercises();
+  }, []);
+
+  const loadWorkouts = async () => {
+    try {
+      const result = await window.storage.get('workouts');
+      if (result && result.value) {
+        setWorkouts(JSON.parse(result.value));
+      }
+    } catch (error) {
+      console.log('No saved workouts yet');
+    }
+  };
+
+  const loadCustomExercises = async () => {
+    try {
+      const result = await window.storage.get('custom-exercises');
+      if (result && result.value) {
+        setCustomExercises(JSON.parse(result.value));
+      }
+    } catch (error) {
+      console.log('No custom exercises yet');
+    }
+  };
+
+  const saveCustomExercises = async (exercises) => {
+    try {
+      await window.storage.set('custom-exercises', JSON.stringify(exercises));
+    } catch (error) {
+      console.error('Error saving custom exercises:', error);
+    }
+  };
+
+  const saveWorkouts = async (newWorkouts) => {
+    try {
+      await window.storage.set('workouts', JSON.stringify(newWorkouts));
+    } catch (error) {
+      console.error('Error saving workouts:', error);
+    }
+  };
+
+  const addSet = () => {
+    setSets([...sets, { weight: '', reps: '' }]);
+  };
+
+  const removeSet = (index) => {
+    setSets(sets.filter((_, i) => i !== index));
+  };
+
+  const updateSet = (index, field, value) => {
+    const newSets = [...sets];
+    newSets[index][field] = value;
+    setSets(newSets);
+  };
+
+  const addCustomExercise = () => {
+    if (!customExerciseName.trim() || !customExerciseCategory) {
+      alert('Please enter exercise name and select a category');
+      return;
+    }
+
+    const updatedExercises = { ...customExercises };
+    if (!updatedExercises[customExerciseCategory]) {
+      updatedExercises[customExerciseCategory] = [];
+    }
+    
+    if (!updatedExercises[customExerciseCategory].includes(customExerciseName.trim())) {
+      updatedExercises[customExerciseCategory].push(customExerciseName.trim());
+      setCustomExercises(updatedExercises);
+      saveCustomExercises(updatedExercises);
+      setSelectedExercise(customExerciseName.trim());
+      setCustomExerciseName('');
+      setCustomExerciseCategory('');
+      alert('Exercise added successfully!');
+    } else {
+      alert('This exercise already exists in that category');
+    }
+  };
+
+  const logWorkout = () => {
+    if (!selectedExercise || selectedExercise === '__custom__' || sets.some(s => !s.weight || !s.reps)) {
+      alert('Please fill in all fields');
+      return;
+    }
+
+    const newWorkout = {
+      id: Date.now(),
+      exercise: selectedExercise,
+      sets: sets.map(s => ({ weight: parseFloat(s.weight), reps: parseInt(s.reps) })),
+      date: new Date().toISOString(),
+      notes: notes
+    };
+
+    const updatedWorkouts = [newWorkout, ...workouts];
+    setWorkouts(updatedWorkouts);
+    saveWorkouts(updatedWorkouts);
+
+    setSelectedExercise('');
+    setSets([{ weight: '', reps: '' }]);
+    setNotes('');
+    alert('Workout logged successfully! 💪');
+  };
+
+  const deleteWorkout = (id) => {
+    const updatedWorkouts = workouts.filter(w => w.id !== id);
+    setWorkouts(updatedWorkouts);
+    saveWorkouts(updatedWorkouts);
+  };
+
+  const getPersonalRecords = () => {
+    const records = {};
+    workouts.forEach(workout => {
+      const maxWeight = Math.max(...workout.sets.map(s => s.weight));
+      if (!records[workout.exercise] || maxWeight > records[workout.exercise].weight) {
+        records[workout.exercise] = {
+          weight: maxWeight,
+          date: workout.date
+        };
+      }
+    });
+    return records;
+  };
+
+  const getProgressData = (exercise) => {
+    const exerciseWorkouts = workouts
+      .filter(w => w.exercise === exercise)
+      .reverse()
+      .slice(-10);
+
+    return exerciseWorkouts.map(w => ({
+      date: new Date(w.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      maxWeight: Math.max(...w.sets.map(s => s.weight)),
+      totalVolume: w.sets.reduce((sum, s) => sum + (s.weight * s.reps), 0)
+    }));
+  };
+
+  const getVolumeByCategory = () => {
+    const volumeData = {};
+    Object.keys(exercises).forEach(category => {
+      volumeData[category] = 0;
+    });
+
+    workouts.forEach(workout => {
+      for (const [category, exerciseList] of Object.entries(exercises)) {
+        if (exerciseList.includes(workout.exercise)) {
+          const volume = workout.sets.reduce((sum, s) => sum + (s.weight * s.reps), 0);
+          volumeData[category] += volume;
+        }
+      }
+    });
+
+    return Object.entries(volumeData).map(([category, volume]) => ({
+      category,
+      volume: Math.round(volume)
+    }));
+  };
+
+  const groupWorkoutsByDay = () => {
+    const grouped = {};
+    
+    workouts.forEach(workout => {
+      const date = new Date(workout.date);
+      const dateKey = new Date(date.getFullYear(), date.getMonth(), date.getDate()).toISOString();
+      
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = [];
+      }
+      grouped[dateKey].push(workout);
+    });
+    
+    return grouped;
+  };
+
+  const getWorkoutStreak = () => {
+    const workoutDays = Object.keys(groupWorkoutsByDay())
+      .map(dateStr => new Date(dateStr))
+      .sort((a, b) => b - a); // Sort descending (newest first)
+    
+    if (workoutDays.length === 0) return { current: 0, longest: 0 };
+    
+    let currentStreak = 0;
+    let longestStreak = 0;
+    let tempStreak = 1;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const mostRecent = new Date(workoutDays[0]);
+    mostRecent.setHours(0, 0, 0, 0);
+    
+    const daysDiff = Math.floor((today - mostRecent) / (1000 * 60 * 60 * 24));
+    
+    // Current streak calculation
+    if (daysDiff <= 1) { // Today or yesterday
+      currentStreak = 1;
+      for (let i = 1; i < workoutDays.length; i++) {
+        const current = new Date(workoutDays[i]);
+        const previous = new Date(workoutDays[i - 1]);
+        current.setHours(0, 0, 0, 0);
+        previous.setHours(0, 0, 0, 0);
+        
+        const diff = Math.floor((previous - current) / (1000 * 60 * 60 * 24));
+        if (diff === 1) {
+          currentStreak++;
+        } else {
+          break;
+        }
+      }
+    }
+    
+    // Longest streak calculation
+    longestStreak = 1;
+    for (let i = 1; i < workoutDays.length; i++) {
+      const current = new Date(workoutDays[i]);
+      const previous = new Date(workoutDays[i - 1]);
+      current.setHours(0, 0, 0, 0);
+      previous.setHours(0, 0, 0, 0);
+      
+      const diff = Math.floor((previous - current) / (1000 * 60 * 60 * 24));
+      if (diff === 1) {
+        tempStreak++;
+        longestStreak = Math.max(longestStreak, tempStreak);
+      } else {
+        tempStreak = 1;
+      }
+    }
+    
+    return { current: currentStreak, longest: longestStreak };
+  };
+
+  const filteredExercises = selectedCategory === 'All' 
+    ? [...Object.values(exercises).flat(), ...Object.values(customExercises).flat()]
+    : [...(exercises[selectedCategory] || []), ...(customExercises[selectedCategory] || [])];
+
+  const exercisesWithData = [...new Set(workouts.map(w => w.exercise))];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white p-4">
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center mb-8">
+          <div className="flex items-center justify-center gap-3 mb-2">
+            <Dumbbell className="w-10 h-10 text-blue-400" />
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+              Gym Workout Tracker
+            </h1>
+          </div>
+          <p className="text-slate-400">Track your lifts, monitor progress, crush your goals</p>
+        </div>
+
+        <div className="flex gap-2 mb-6 overflow-x-auto pb-2">
+          {[
+            { id: 'log', icon: Plus, label: 'Log Workout' },
+            { id: 'history', icon: Calendar, label: 'History' },
+            { id: 'progress', icon: TrendingUp, label: 'Progress' },
+            { id: 'records', icon: Award, label: 'PRs' },
+            { id: 'stats', icon: BarChart3, label: 'Stats' }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all whitespace-nowrap ${
+                activeTab === tab.id
+                  ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/50'
+                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+              }`}
+            >
+              <tab.icon className="w-4 h-4" />
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === 'log' && (
+          <div className="bg-slate-800 rounded-xl p-6 shadow-2xl">
+            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+              <Activity className="w-6 h-6 text-blue-400" />
+              Log Today's Workout
+            </h2>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">Category</label>
+              <select
+                value={selectedCategory}
+                onChange={(e) => {
+                  setSelectedCategory(e.target.value);
+                  setSelectedExercise('');
+                }}
+                className="w-full p-3 bg-slate-700 rounded-lg border border-slate-600 focus:border-blue-400 focus:outline-none"
+              >
+                <option value="All">All Exercises</option>
+                {Object.keys(exercises).map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2">Exercise</label>
+              <select
+                value={selectedExercise}
+                onChange={(e) => setSelectedExercise(e.target.value)}
+                className="w-full p-3 bg-slate-700 rounded-lg border border-slate-600 focus:border-blue-400 focus:outline-none"
+              >
+                <option value="">Select an exercise</option>
+                {filteredExercises.map(ex => (
+                  <option key={ex} value={ex}>{ex}</option>
+                ))}
+                <option value="__custom__">+ Add Custom Exercise</option>
+              </select>
+            </div>
+
+            {selectedExercise === '__custom__' && (
+              <div className="mb-6 bg-slate-700 p-4 rounded-lg border border-blue-400">
+                <label className="block text-sm font-medium mb-2">Custom Exercise Name</label>
+                <input
+                  type="text"
+                  placeholder="Enter exercise name"
+                  value={customExerciseName}
+                  onChange={(e) => setCustomExerciseName(e.target.value)}
+                  className="w-full p-3 bg-slate-600 rounded-lg border border-slate-500 focus:border-blue-400 focus:outline-none mb-3"
+                />
+                <label className="block text-sm font-medium mb-2">Category</label>
+                <select
+                  value={customExerciseCategory}
+                  onChange={(e) => setCustomExerciseCategory(e.target.value)}
+                  className="w-full p-3 bg-slate-600 rounded-lg border border-slate-500 focus:border-blue-400 focus:outline-none mb-3"
+                >
+                  <option value="">Select category</option>
+                  {Object.keys(exercises).map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+                <button
+                  onClick={addCustomExercise}
+                  className="w-full py-2 bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors font-medium"
+                >
+                  Add Exercise
+                </button>
+              </div>
+            )}
+
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <label className="block text-sm font-medium">Sets</label>
+                <button
+                  onClick={addSet}
+                  className="flex items-center gap-1 px-3 py-1 bg-blue-500 rounded-lg hover:bg-blue-600 transition-colors text-sm"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Set
+                </button>
+              </div>
+              
+              <div className="space-y-2">
+                {sets.map((set, index) => (
+                  <div key={index} className="flex gap-2 items-center">
+                    <span className="text-slate-400 w-8 flex-shrink-0">#{index + 1}</span>
+                    <input
+                      type="number"
+                      placeholder="Weight (lbs)"
+                      value={set.weight}
+                      onChange={(e) => updateSet(index, 'weight', e.target.value)}
+                      className="w-full p-2 bg-slate-700 rounded-lg border border-slate-600 focus:border-blue-400 focus:outline-none min-w-0"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Reps"
+                      value={set.reps}
+                      onChange={(e) => updateSet(index, 'reps', e.target.value)}
+                      className="w-full p-2 bg-slate-700 rounded-lg border border-slate-600 focus:border-blue-400 focus:outline-none min-w-0"
+                    />
+                    {sets.length > 1 && (
+                      <button
+                        onClick={() => removeSet(index)}
+                        className="p-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors flex-shrink-0"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium mb-2">Notes (optional)</label>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="How did it feel? Any observations?"
+                className="w-full p-3 bg-slate-700 rounded-lg border border-slate-600 focus:border-blue-400 focus:outline-none h-24 resize-none"
+              />
+            </div>
+
+            <button
+              onClick={logWorkout}
+              className="w-full py-3 bg-gradient-to-r from-blue-500 to-purple-500 rounded-lg font-semibold hover:from-blue-600 hover:to-purple-600 transition-all shadow-lg"
+            >
+              Log Workout
+            </button>
+          </div>
+        )}
+
+        {activeTab === 'history' && (
+          <div className="bg-slate-800 rounded-xl p-6 shadow-2xl">
+            <h2 className="text-2xl font-bold mb-6">Workout History</h2>
+            {workouts.length === 0 ? (
+              <p className="text-slate-400 text-center py-8">No workouts logged yet. Start tracking your progress!</p>
+            ) : (
+              <div className="space-y-6">
+                {Object.entries(groupWorkoutsByDay()).map(([date, dayWorkouts]) => (
+                  <div key={date} className="bg-slate-700/50 rounded-xl p-5 border border-slate-600">
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 className="text-xl font-bold text-blue-400">
+                          {new Date(date).toLocaleDateString('en-US', { 
+                            weekday: 'long', 
+                            month: 'long', 
+                            day: 'numeric',
+                            year: 'numeric'
+                          })}
+                        </h3>
+                        <p className="text-sm text-slate-400">
+                          {dayWorkouts.length} {dayWorkouts.length === 1 ? 'exercise' : 'exercises'} • {
+                            dayWorkouts.reduce((sum, w) => sum + w.sets.length, 0)
+                          } total sets
+                        </p>
+                      </div>
+                      <Calendar className="w-6 h-6 text-slate-400" />
+                    </div>
+                    
+                    <div className="space-y-3">
+                      {dayWorkouts.map(workout => (
+                        <div key={workout.id} className="bg-slate-700 rounded-lg p-4 border border-slate-600">
+                          <div className="flex justify-between items-start mb-2">
+                            <div>
+                              <h4 className="font-bold text-lg text-blue-300">{workout.exercise}</h4>
+                              <p className="text-xs text-slate-400">
+                                {new Date(workout.date).toLocaleTimeString('en-US', { 
+                                  hour: '2-digit',
+                                  minute: '2-digit'
+                                })}
+                              </p>
+                            </div>
+                            <button
+                              onClick={() => deleteWorkout(workout.id)}
+                              className="p-2 text-red-400 hover:bg-red-500/20 rounded-lg transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 mb-2">
+                            {workout.sets.map((set, idx) => (
+                              <div key={idx} className="bg-slate-600 rounded px-3 py-2 text-sm">
+                                <span className="text-slate-400">Set {idx + 1}:</span>{' '}
+                                <span className="font-semibold">{set.weight} lbs × {set.reps}</span>
+                              </div>
+                            ))}
+                          </div>
+                          {workout.notes && (
+                            <p className="text-sm text-slate-300 mt-2 italic">"{workout.notes}"</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'progress' && (
+          <div className="bg-slate-800 rounded-xl p-6 shadow-2xl">
+            <h2 className="text-2xl font-bold mb-6">Progress Charts</h2>
+            {exercisesWithData.length === 0 ? (
+              <p className="text-slate-400 text-center py-8">Log some workouts to see your progress!</p>
+            ) : (
+              <div className="space-y-8">
+                {exercisesWithData.map(exercise => {
+                  const data = getProgressData(exercise);
+                  if (data.length < 2) return null;
+                  
+                  return (
+                    <div key={exercise} className="bg-slate-700 rounded-lg p-4">
+                      <h3 className="font-bold text-lg mb-4 text-blue-400">{exercise}</h3>
+                      <ResponsiveContainer width="100%" height={250}>
+                        <LineChart data={data}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#475569" />
+                          <XAxis dataKey="date" stroke="#94a3b8" />
+                          <YAxis stroke="#94a3b8" />
+                          <Tooltip 
+                            contentStyle={{ backgroundColor: '#334155', border: '1px solid #475569', borderRadius: '8px' }}
+                          />
+                          <Legend />
+                          <Line 
+                            type="monotone" 
+                            dataKey="maxWeight" 
+                            stroke="#3b82f6" 
+                            strokeWidth={2}
+                            name="Max Weight (lbs)"
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="totalVolume" 
+                            stroke="#a855f7" 
+                            strokeWidth={2}
+                            name="Total Volume"
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'records' && (
+          <div className="bg-slate-800 rounded-xl p-6 shadow-2xl">
+            <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+              <Award className="w-6 h-6 text-yellow-400" />
+              Personal Records
+            </h2>
+            {Object.keys(getPersonalRecords()).length === 0 ? (
+              <p className="text-slate-400 text-center py-8">Start lifting to set your first PR!</p>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {Object.entries(getPersonalRecords()).map(([exercise, record]) => (
+                  <div key={exercise} className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 rounded-lg p-4 border border-yellow-500/30">
+                    <h3 className="font-bold text-lg mb-2">{exercise}</h3>
+                    <p className="text-3xl font-bold text-yellow-400 mb-1">{record.weight} lbs</p>
+                    <p className="text-sm text-slate-400">
+                      {new Date(record.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'stats' && (
+          <div className="bg-slate-800 rounded-xl p-6 shadow-2xl">
+            <h2 className="text-2xl font-bold mb-6">Training Statistics</h2>
+            {workouts.length === 0 ? (
+              <p className="text-slate-400 text-center py-8">No data available yet!</p>
+            ) : (
+              <div className="space-y-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="bg-slate-700 rounded-lg p-4 text-center">
+                    <p className="text-slate-400 text-sm mb-1">Total Workouts</p>
+                    <p className="text-3xl font-bold text-blue-400">{Object.keys(groupWorkoutsByDay()).length}</p>
+                  </div>
+                  <div className="bg-slate-700 rounded-lg p-4 text-center">
+                    <p className="text-slate-400 text-sm mb-1">Exercises Tracked</p>
+                    <p className="text-3xl font-bold text-purple-400">{exercisesWithData.length}</p>
+                  </div>
+                  <div className="bg-slate-700 rounded-lg p-4 text-center">
+                    <p className="text-slate-400 text-sm mb-1">Current Streak</p>
+                    <p className="text-3xl font-bold text-green-400">
+                      {getWorkoutStreak().current} 🔥
+                    </p>
+                  </div>
+                  <div className="bg-slate-700 rounded-lg p-4 text-center">
+                    <p className="text-slate-400 text-sm mb-1">Longest Streak</p>
+                    <p className="text-3xl font-bold text-orange-400">
+                      {getWorkoutStreak().longest} 💪
+                    </p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-700 rounded-lg p-4">
+                  <h3 className="font-bold text-lg mb-4">Volume by Muscle Group</h3>
+                  <div className="space-y-2">
+                    {getVolumeByCategory().filter(c => c.volume > 0).map(cat => (
+                      <div key={cat.category}>
+                        <div className="flex justify-between mb-1">
+                          <span className="text-sm">{cat.category}</span>
+                          <span className="text-sm text-slate-400">{cat.volume.toLocaleString()} lbs</span>
+                        </div>
+                        <div className="h-2 bg-slate-600 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-gradient-to-r from-blue-500 to-purple-500"
+                            style={{ 
+                              width: `${(cat.volume / Math.max(...getVolumeByCategory().map(c => c.volume))) * 100}%` 
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default WorkoutTracker;
